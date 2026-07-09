@@ -2,295 +2,151 @@
 
 ## Overview
 
-This project predicts the **Coefficient of Performance (COP)** of an industrial refrigeration compressor **6 hours in advance** using an XGBoost Regression model.
+This module predicts compressor COP (Coefficient of Performance) 6 hours ahead using pre-trained XGBoost models.
 
-The model is trained from historical compressor sensor data together with engineered time-series features.
+Current implementation supports 2 compressor types:
+- high
+- booster
 
----
+Prediction flow:
+1. Read historical sensor data.
+2. Generate time-aware features (time, lag, rolling windows).
+3. Select features from config/feature_cols.json.
+4. Predict prediction_COP_6h.
+5. Optionally attach actual_COP_6h if performance_COP exists in input.
 
-# Project Structure
+## Project Structure
 
-```
+```text
 cop_forecast_model/
-│
-├── model/
-│   ├── xgboost_high_performance_COP_forecast_6h.joblib
-│   └── xgboost_booster_performance_COP_forecast_6h.joblib
-│
-├── config/
-│   ├── feature_cols.json
-│   └── settings.py
-│
-├── preprocessing/
-│   ├── __init__.py
-│   └── add_time_aware_features.py
-│
-├── predict.py
-├── requirements.txt
-└── README.md
+|- config/
+|  |- feature_cols.json
+|  \- settings.py
+|- data/
+|  |- sensordata_high.csv
+|  |- sensordata_high_result.csv
+|  |- sensordata_booster.csv
+|  \- sensordata_booster_result.csv
+|- model/
+|  |- xgboost_high_performance_COP_forecast_6h.joblib
+|  \- xgboost_booster_performance_COP_forecast_6h.joblib
+|- preprocessing/
+|  \- add_time_aware_features.py
+|- predict.py
+|- requirements.txt
+\- readme.md
 ```
 
----
-
-# Requirements
+## Requirements
 
 Python 3.10+
 
-Install required packages
+Install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Required packages
+Packages in requirements.txt:
+- numpy
+- pandas
+- joblib
+- xgboost
+- scikit-learn
+- matplotlib
 
-```
-numpy
-pandas
-xgboost
-scikit-learn
-joblib
-```
+## Input Data
 
----
+Required minimum columns for prediction pipeline:
+- _time
+- compressor_id
+- base sensor columns used by config/feature_cols.json
 
-# Model Information
+Typical base columns:
+- amp, sp, dp, st, dt
+- glycol_temp, glycol_level
+- oil_filter, oil_level
+- op, ot, slide_valve
+- nh3_level, nh3_pump
+- room_1b, room_1c, room_2b, room_2c, room_3b
+- run_hour
+- h1, h2, h3, h4
+- superheat, subcool, T_evap, T_cond
 
-| Item | Value |
-|------|-------|
-| Algorithm | XGBoost Regressor |
-| Forecast Horizon | 6 Hours |
-| Target | performance_COP |
-| Features | 68 |
+Optional:
+- performance_COP (if present, output will include actual_COP_6h for comparison)
 
----
+Notes:
+- Raw exports can contain extra columns (for example Column1, result, _start, _stop, _measurement). Extra columns are ignored.
+- _time is parsed as UTC.
 
-# Model Performance
+## Feature Engineering
 
-### High Compressor
+Implemented in preprocessing/add_time_aware_features.py.
 
-| Metric | Value |
-|---------|------:|
-| MAE | 0.236 |
-| RMSE | 0.313 |
-| R² | 0.610 |
-| SMAPE | 7.04% |
+Generated features include:
+- time features: hour, day_of_week, is_weekend, delta_hours
+- lag features (1,2,3) for available columns in settings.LAG_SOURCE_COLS
+- rolling mean/std with windows 6h, 12h, 24h for available columns in settings.ROLLING_SOURCE_COLS
 
-### Booster Compressor
+Feature columns and order must match config/feature_cols.json exactly.
 
-| Metric | Value |
-|---------|------:|
-| MAE | 0.306 |
-| RMSE | 0.400 |
-| R² | 0.092 |
-| SMAPE | 9.85% |
+## Run Script
 
----
+From cop_forecast_model folder:
 
-# Input Data
-
-The model requires historical sensor data.
-
-Example columns
-
-```
-_time
-compressor_id
-amp
-sp
-dp
-st
-dt
-glycol_temp
-glycol_level
-oil_filter
-oil_level
-op
-ot
-slide_valve
-nh3_level
-nh3_pump
-room_1b
-room_1c
-room_2b
-room_2c
-room_3b
-run_hour
-h1
-h2
-h3
-h4
-superheat
-subcool
-T_evap
-T_cond
+```bash
+python predict.py
 ```
 
----
+Current default behavior in predict.py:
+- Uses high dataset from data/sensordata_high.csv
+- Merges with data/sensordata_high_result.csv
+- Converts frontend/result column names via COPPredictor.convert_columns()
+- Loads high model
+- Writes output to prediction_high.csv
 
-# Feature Engineering
-
-Before prediction, additional features must be generated automatically.
-
-Generated Features include
-
-- Hour
-- Day of Week
-- Weekend Flag
-- Delta Hours
-
-Lag Features
-
-```
-amp_lag_1
-amp_lag_2
-amp_lag_3
-
-sp_lag_1
-...
-
-slide_valve_lag_3
-```
-
-Rolling Mean
-
-```
-6 Hours
-12 Hours
-24 Hours
-```
-
-Rolling Standard Deviation
-
-```
-6 Hours
-12 Hours
-24 Hours
-```
-
-Feature generation is performed by
-
-```
-preprocessing/add_time_aware_features.py
-```
-
----
-
-# Prediction Workflow
-
-```
-Sensor Data
-
-        │
-
-        ▼
-
-Generate Time-aware Features
-
-        │
-
-        ▼
-
-Select Features
-
-(feature_cols.json)
-
-        │
-
-        ▼
-
-Load XGBoost Model
-
-        │
-
-        ▼
-
-Predict COP (6 Hours Ahead)
-```
-
----
-
-# Example Usage
+## Python Usage
 
 ```python
 import pandas as pd
-
 from predict import COPPredictor
 
-predictor = COPPredictor(
-    model_path="model/xgboost_high_performance_COP_forecast_6h.joblib",
-    feature_path="config/feature_cols.json"
+sensor_df = pd.read_csv("data/sensordata_high.csv").merge(
+    pd.read_csv("data/sensordata_high_result.csv"),
+    on=["_time", "compressor_id"],
+    how="left",
 )
 
-sensor_df = pd.read_csv("sensor_data.csv")
+sensor_df = COPPredictor.convert_columns(sensor_df)
 
-prediction = predictor.predict(sensor_df)
-
-print(prediction)
+predictor = COPPredictor("high")  # or "booster"
+result = predictor.predict(sensor_df)
+print(result.head())
 ```
 
----
+## Output
 
-# Output
+Returned/saved columns:
+- _time
+- forecast_time
+- compressor_id
+- prediction_COP_6h
+- actual_COP_6h (may be NaN when future actual is unavailable)
 
-The prediction result contains
+Example output file:
+- prediction_high.csv
 
-```
-_time
+## Common Errors
 
-compressor_id
+- ValueError: compressor_type must be 'high' or 'booster'
+  - Pass only supported compressor type.
 
-prediction_COP_6h
-```
+- ValueError: Missing features: [...]
+  - Input does not contain all required features after preprocessing.
+  - Check config/feature_cols.json and column mapping in config/settings.py.
 
-Example
+## Maintenance Notes
 
-| Time | Compressor | Predicted COP |
-|------|------------|--------------:|
-|2026-01-01 08:00|4|3.81|
-
----
-
-# Important Notes
-
-The model **cannot predict from a single sensor record**.
-
-Historical data is required because the model uses
-
-- Lag Features
-- Rolling Mean
-- Rolling Standard Deviation
-
-The backend should provide enough historical records (at least **24 hours**) before calling the prediction function.
-
----
-
-# Feature List
-
-The model only accepts the feature names and order defined in
-
-```
-config/feature_cols.json
-```
-
-Do not
-
-- change feature order
-- remove features
-- rename columns
-
----
-
-# Output Target
-
-```
-prediction_COP_6h
-```
-
-Represents the predicted compressor COP **6 hours after the input timestamp**.
-
----
-
-# Contact
-
-If preprocessing logic or feature engineering is modified, the model should be retrained before deployment.
+- If feature engineering logic or feature list changes, retrain models and update feature_cols.json together.
+- Keep model filenames consistent with predict.py loading logic.

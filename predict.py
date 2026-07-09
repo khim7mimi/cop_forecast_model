@@ -105,22 +105,28 @@ class COPPredictor:
 
 if __name__ == "__main__":
 
-    sensor_df = pd.read_csv("data/sensordata_high.csv").merge(
-        pd.read_csv("data/sensordata_high_result.csv"),
+    compressor_type = "high"      # เปลี่ยนเป็น "booster" ได้
+
+    sensor_df = pd.read_csv(
+        f"data/sensordata_{compressor_type}.csv"
+    ).merge(
+        pd.read_csv(
+            f"data/sensordata_{compressor_type}_result.csv"
+        ),
         on=["_time", "compressor_id"],
-        how="left"
+        how="left",
     )
 
     sensor_df = COPPredictor.convert_columns(sensor_df)
 
-    predictor = COPPredictor("high")
+    predictor = COPPredictor(compressor_type)
 
     result = predictor.predict(sensor_df)
 
     result.to_csv(
-        "prediction_high.csv",
+        f"prediction_{compressor_type}.csv",
         index=False,
         encoding="utf-8-sig",
     )
 
-    print("Prediction completed.")
+    print(f"{compressor_type} prediction completed.")
